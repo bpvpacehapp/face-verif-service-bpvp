@@ -1,0 +1,10 @@
+venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.h5
+*.pt
+*.pth
+*.onnx
+.DS_Store

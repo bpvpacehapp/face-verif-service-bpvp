@@ -1,0 +1,18 @@
+# ── Database ──────────────────────────────────────────────
+psycopg[binary]>=3.1
+python-dotenv>=1.0
+
+# ── Numerik ───────────────────────────────────────────────
+numpy>=1.26
+
+# ── API & Keamanan ────────────────────────────────────────
+fastapi>=0.111
+uvicorn[standard]>=0.29
+
+# ── Pipeline AI (akan diinstal bertahap) ──────────────────
+# ultralytics          # detector YOLO (langkah berikutnya)
+# mediapipe            # face alignment
+# tensorflow           # FaceNet512 .h5 — coba dulu; jika error pakai tf-keras
+# tf-keras             # alternatif jika Keras 3 tidak kompatibel dengan .h5 lama
+# opencv-python        # manipulasi gambar
+# httpx                # download gambar dari URL
