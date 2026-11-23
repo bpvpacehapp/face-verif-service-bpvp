@@ -11,7 +11,10 @@ fastapi>=0.111
 uvicorn[standard]>=0.29
 
 # ── Pipeline AI ───────────────────────────────────────────
+# Model: yolov12n-face.pt dari https://github.com/praysimanjuntak/yolov12face
+# Taruh file .pt di folder models/ — tidak perlu download otomatis
 ultralytics>=8.3          # face detection: YOLOv12n-face
+
 # mediapipe               # face alignment (langkah berikutnya)
 # tensorflow              # FaceNet512 .h5 — coba dulu; jika error pakai tf-keras
 # tf-keras                # alternatif jika Keras 3 tidak kompatibel dengan .h5 lama
