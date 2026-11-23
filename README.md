@@ -6,7 +6,7 @@ Dibangun dengan **FastAPI** + **PostgreSQL**, berjalan terpisah dari aplikasi ut
 ## Fitur (bertahap)
 - [x] Koneksi database PostgreSQL (`face_embeddings`)
 - [x] CORS + autentikasi API key (`X-API-Key`)
-- [ ] Face detection (YOLOv12n-face)
+- [x] Face detection & bounding box crop (YOLOv12n-face + margin 15%)
 - [ ] Face alignment (MediaPipe)
 - [ ] Face recognition / embedding (FaceNet512)
 - [ ] Anti-spoofing / liveness detection
