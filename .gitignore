@@ -3,8 +3,20 @@ venv/
 __pycache__/
 *.pyc
 *.pyo
-*.h5
-*.pt
-*.pth
-*.onnx
+
+# Model AI — file besar, tidak di-commit
+models/*.pt
+models/*.h5
+models/*.onnx
+models/*.pth
+
+# Dataset — foto lokal, tidak di-commit
+datasets/sample/*
+datasets/output/*
+
+# Kecualikan placeholder folder
+!datasets/sample/.gitkeep
+!datasets/output/.gitkeep
+!models/.gitkeep
+
 .DS_Store

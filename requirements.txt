@@ -2,17 +2,18 @@
 psycopg[binary]>=3.1
 python-dotenv>=1.0
 
-# ── Numerik ───────────────────────────────────────────────
+# ── Numerik & Gambar ──────────────────────────────────────
 numpy>=1.26
+opencv-python>=4.9
 
 # ── API & Keamanan ────────────────────────────────────────
 fastapi>=0.111
 uvicorn[standard]>=0.29
 
-# ── Pipeline AI (akan diinstal bertahap) ──────────────────
-# ultralytics          # detector YOLO (langkah berikutnya)
-# mediapipe            # face alignment
-# tensorflow           # FaceNet512 .h5 — coba dulu; jika error pakai tf-keras
-# tf-keras             # alternatif jika Keras 3 tidak kompatibel dengan .h5 lama
-# opencv-python        # manipulasi gambar
-# httpx                # download gambar dari URL
+# ── Pipeline AI ───────────────────────────────────────────
+ultralytics>=8.3          # face detection: YOLOv12n-face
+# mediapipe               # face alignment (langkah berikutnya)
+# tensorflow              # FaceNet512 .h5 — coba dulu; jika error pakai tf-keras
+# tf-keras                # alternatif jika Keras 3 tidak kompatibel dengan .h5 lama
+# httpx                   # download gambar dari URL (enrollment)
+
