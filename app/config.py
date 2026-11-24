@@ -11,9 +11,20 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL belum diatur di file .env")
 
-# ── Model AI ──────────────────────────────────────────────
-MODEL_NAME = "facenet512"
-EMBEDDING_DIM = 512  # dimensi output FaceNet512
+# ── Model AI & Verifikasi ─────────────────────────────────
+MODEL_NAME = os.getenv("MODEL_NAME", "vggface2")
+EMBEDDING_DIM = 512  # dimensi output InceptionResnetV1 (VGGFace2)
+
+# Batas minimum kemiripan wajah (default 0.60 atau 60%)
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.60"))
+
+# Mode Lingkungan (development vs production)
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+# Sembunyikan threshold di response jika production
+SHOW_THRESHOLD = (
+    os.getenv("SHOW_THRESHOLD", "true").lower() == "true"
+    and ENVIRONMENT != "production"
+)
 
 # ── Keamanan API ──────────────────────────────────────────
 API_KEY = os.getenv("API_KEY")

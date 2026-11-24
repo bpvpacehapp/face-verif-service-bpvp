@@ -12,11 +12,8 @@ uvicorn[standard]>=0.29
 
 # ── Pipeline AI ───────────────────────────────────────────
 # Model: yolov12n-face.pt dari https://github.com/praysimanjuntak/yolov12face
-# Taruh file .pt di folder models/ — tidak perlu download otomatis
 ultralytics>=8.3          # face detection: YOLOv12n-face
-
-# mediapipe               # face alignment (langkah berikutnya)
-# tensorflow              # FaceNet512 .h5 — coba dulu; jika error pakai tf-keras
-# tf-keras                # alternatif jika Keras 3 tidak kompatibel dengan .h5 lama
-# httpx                   # download gambar dari URL (enrollment)
+mediapipe>=0.10.0         # face alignment: landmark mata & rotasi horizontal
+facenet-pytorch>=2.5.3    # embedding extractor: InceptionResnetV1 (VGGFace2 512-d)
+httpx>=0.27.0             # download foto enrollment dari URL API sistem utama
 
