@@ -15,5 +15,6 @@ uvicorn[standard]>=0.29
 ultralytics>=8.3          # face detection: YOLOv12n-face
 mediapipe>=0.10.0         # face alignment: landmark mata & rotasi horizontal
 facenet-pytorch>=2.5.3    # embedding extractor: InceptionResnetV1 (VGGFace2 512-d)
+uniface[cpu]>=0.1.0       # anti-spoofing / liveness detection (MiniFASNet ONNX)
 httpx>=0.27.0             # download foto enrollment dari URL API sistem utama
 

@@ -10,13 +10,17 @@ models/*.h5
 models/*.onnx
 models/*.pth
 
-# Dataset — foto lokal, tidak di-commit
+# Dataset foto lokal — privasi aman, tidak di-commit
 datasets/sample/*
 datasets/output/*
+datasets/reference/*
+datasets/live_test/*
 
 # Kecualikan placeholder folder
 !datasets/sample/.gitkeep
 !datasets/output/.gitkeep
+!datasets/reference/.gitkeep
+!datasets/live_test/.gitkeep
 !models/.gitkeep
 
 .DS_Store

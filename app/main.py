@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import CORS_ORIGINS
 from app.security import verify_api_key
+from app.routers import enrollment, verification
 
 app = FastAPI(
     title="Face Verification Service — BPVP",
@@ -46,9 +47,6 @@ def health_check():
 
 
 # ── Contoh endpoint terproteksi ──────────────────────────────────────────────
-# Endpoint nyata (enrollment, verifikasi) akan ditambahkan di sini atau
-# di router terpisah (app/routers/) setelah pipeline AI selesai.
-
 @app.get("/ping", tags=["Sistem"], dependencies=[Depends(verify_api_key)])
 def ping():
     """
@@ -58,7 +56,6 @@ def ping():
     return {"message": "pong", "auth": "API key valid"}
 
 
-# ── Placeholder router (akan diaktifkan bertahap) ─────────────────────────────
-# from app.routers import enrollment, verification
-# app.include_router(enrollment.router, prefix="/face-datasets", tags=["Enrollment"])
-# app.include_router(verification.router, prefix="/verify",     tags=["Verifikasi"])
+# ── Daftarkan Router Bisnis ──────────────────────────────────────────────────
+app.include_router(enrollment.router)
+app.include_router(verification.router)

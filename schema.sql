@@ -1,25 +1,48 @@
--- 1. Create User untuk aplikasi
- create user presensi_app with password 'bpvp123';
- grant connect on database face_detection_bpvp to presensi_app;
+-- ============================================================
+-- Schema: face_detection_bpvp
+-- Layanan Verifikasi Wajah Internal Admin BPVP
+-- ============================================================
 
--- 2. Tabel embedding wajah
-create table if not exists face_embeddings (
-	id BIGSERIAL primary key,
-	user_id VARCHAR(100) not null,
-	embedding real[] not null,
-	model_name VARCHAR(50) not null default 'facenet12',
-	source_url text,
-	det_confidence real,
-	is_active boolean not null default true,
-	created_at TIMESTAMPTZ not null default now(),
-	
-constraint chk_embedding_dim check (array_length(embedding, 1)= 512),
-constraint uq_user_source unique (user_id, source_url)
+-- 1. Tabel dataset embedding referensi pegawai (Incremental Learning)
+CREATE TABLE IF NOT EXISTS face_embeddings (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         VARCHAR(100) NOT NULL,
+    embedding       REAL[] NOT NULL,
+    model_name      VARCHAR(50) NOT NULL DEFAULT 'vggface2',
+    source_url      TEXT,
+    det_confidence  REAL,
+    attendance_date TIMESTAMPTZ NOT NULL DEFAULT now(), -- tanggal foto diupload
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_embedding_dim CHECK (array_length(embedding, 1) = 512),
+    CONSTRAINT uq_user_source UNIQUE (user_id, source_url)
 );
 
-create index if not exists idx_face_embeddings_user_id on face_embeddings (user_id);
+CREATE INDEX IF NOT EXISTS idx_face_embeddings_user_id ON face_embeddings (user_id);
+CREATE INDEX IF NOT EXISTS idx_face_embeddings_date ON face_embeddings (attendance_date);
 
--- 3. Hak akses user aplikasi
-grant usage on schema public to presensi_app;
-grant select, insert, update, delete on face_embeddings to presensi_app;
-grant usage, select on all sequences in schema public to presensi_app;
+-- 2. Tabel Riwayat Verifikasi Presensi Pegawai (Admin Panel Audit)
+CREATE TABLE IF NOT EXISTS attendance_verifications (
+    id                     BIGSERIAL PRIMARY KEY,
+    user_id                VARCHAR(100) NOT NULL,
+    attendance_date        TIMESTAMPTZ NOT NULL DEFAULT now(), -- tanggal absen diupload
+    photo_url              TEXT,
+    process_status         VARCHAR(20) NOT NULL DEFAULT 'DONE', -- 'NO_DATASET', 'ON_PROCESS', 'DONE', 'FAILED'
+    is_spoof               BOOLEAN NOT NULL DEFAULT FALSE,     -- True jika terindikasi layar/kertas
+    similarity_percentage  VARCHAR(10),                        -- contoh: '84.5%'
+    similarity_score       REAL,                               -- contoh: 0.8450
+    verification_status    VARCHAR(30) NOT NULL,               -- 'VERIFIED', 'NEEDS_REVIEW', 'NO_DATASET', 'FAILED'
+    execution_time_seconds REAL,                               -- waktu proses mesin (detik)
+    notes                  TEXT,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_att_verif_user_id ON attendance_verifications (user_id);
+CREATE INDEX IF NOT EXISTS idx_att_verif_date ON attendance_verifications (attendance_date);
+CREATE INDEX IF NOT EXISTS idx_att_verif_status ON attendance_verifications (verification_status);
+
+-- 3. Hak akses user aplikasi presensi_app
+GRANT USAGE ON SCHEMA public TO presensi_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON face_embeddings TO presensi_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON attendance_verifications TO presensi_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO presensi_app;
