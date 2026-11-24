@@ -86,19 +86,30 @@ def check_anti_spoof(
         # MiniFASNet uniface menerima image dan bounding box [x1, y1, x2, y2]
         pred = spoofer.predict(image_bgr, bbox)
 
+        is_real = True
+        score = 1.0
+
         if isinstance(pred, dict):
-            is_real = bool(pred.get("is_real", True))
+            # Format resmi uniface / MiniFASNet:
+            # {"label": "Real" | "Fake", "score": float, "bbox": [...]}
+            label_val = str(pred.get("label", "")).strip().lower()
             score = float(pred.get("score", 1.0))
+
+            if label_val in ("fake", "spoof"):
+                is_real = False
+            elif label_val in ("real", "live"):
+                is_real = True
+            elif "is_real" in pred:
+                is_real = bool(pred["is_real"])
+            else:
+                # Jika label tidak ada, gunakan score probabilitas (class 1 = Real)
+                is_real = score >= 0.5
         elif isinstance(pred, (bool, np.bool_)):
             is_real = bool(pred)
             score = 1.0
         elif isinstance(pred, (int, float, np.number)):
-            # Probabilitas keaslian wajah (>= 0.5 adalah real)
             score = float(pred)
             is_real = score >= 0.5
-        else:
-            is_real = True
-            score = 1.0
 
         is_spoof = not is_real
         label = "SPOOF" if is_spoof else "REAL"

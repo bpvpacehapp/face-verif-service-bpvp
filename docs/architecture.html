@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Archify — Face Verification Service BPVP Architecture & ERD</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --bg-panel: #111827;
+      --bg-card: #1e293b;
+      --bg-card-hover: #263449;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.22);
+      --tier-client: #3b82f6;
+      --tier-gateway: #f59e0b;
+      --tier-ai: #8b5cf6;
+      --tier-db: #10b981;
+      --tier-admin: #ec4899;
+      --grid-color: rgba(148, 163, 184, 0.07);
+    }
+
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --bg-panel: #ffffff;
+      --bg-card: #f1f5f9;
+      --bg-card-hover: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --border: #cbd5e1;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --grid-color: rgba(15, 23, 42, 0.06);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 20;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .badge {
+      background: var(--accent-glow);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    h1 { font-size: 16px; font-weight: 700; }
+    .subtitle { font-size: 12px; color: var(--text-muted); }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tab-group {
+      display: flex;
+      background: var(--bg-card);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-right: 12px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: #0b0f19;
+    }
+    .btn {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 11px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent);
+    }
+
+    /* Main Workspace */
+    .workspace {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .canvas-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background-image: radial-gradient(var(--grid-color) 1px, transparent 1px);
+      background-size: 20px 20px;
+      cursor: grab;
+    }
+    .canvas-container:active { cursor: grabbing; }
+
+    svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* SVG Styling */
+    .node-group { cursor: pointer; transition: transform 0.2s; }
+    .node-rect {
+      fill: var(--bg-panel);
+      stroke-width: 2;
+      rx: 10;
+      ry: 10;
+      transition: filter 0.2s, stroke-width 0.2s;
+    }
+    .node-group:hover .node-rect,
+    .node-group.selected .node-rect {
+      stroke-width: 3;
+      filter: drop-shadow(0 0 12px var(--accent-glow));
+    }
+    .node-title { fill: var(--text); font-size: 13px; font-weight: 700; }
+    .node-sub { fill: var(--text-muted); font-size: 11px; }
+    .node-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; }
+
+    .edge {
+      fill: none;
+      stroke: var(--border);
+      stroke-width: 2;
+    }
+    .edge-flow {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 2.2;
+      stroke-dasharray: 6 6;
+      animation: flowDash 1s linear infinite;
+    }
+    .edge-flow.paused { animation-play-state: paused; opacity: 0.25; }
+    @keyframes flowDash {
+      to { stroke-dashoffset: -12; }
+    }
+    .edge-label {
+      fill: var(--text-muted);
+      font-size: 10.5px;
+      font-weight: 500;
+    }
+
+    /* Inspector Sidebar */
+    .inspector {
+      width: 360px;
+      background: var(--bg-panel);
+      border-left: 1px solid var(--border);
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      z-index: 10;
+    }
+    .inspector h2 { font-size: 15px; font-weight: 700; color: var(--accent); }
+    .inspector-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .inspector-card h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .inspector-card p, .inspector-card li {
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--text);
+    }
+    .inspector-card ul { padding-left: 16px; }
+    code {
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      font-size: 11.5px;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent);
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+
+    /* Legend Footer */
+    .legend {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      display: flex;
+      gap: 16px;
+      font-size: 11.5px;
+      z-index: 10;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="badge">Archify</span>
+      <div>
+        <h1>Face Verification Service — BPVP</h1>
+        <div class="subtitle">Arsitektur Microservice, Alur Pipeline AI 11-Poin & ERD PostgreSQL</div>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="tab-group">
+        <button class="tab-btn active" onclick="switchView('arch')" id="tab-arch">1. Arsitektur & Alur AI</button>
+        <button class="tab-btn" onclick="switchView('erd')" id="tab-erd">2. Database & ERD</button>
+      </div>
+      <button class="btn" onclick="toggleFlow()" id="btn-flow">⚡ Pause Animasi</button>
+      <button class="btn" onclick="resetZoom()">🎯 Reset Zoom</button>
+      <button class="btn" onclick="toggleTheme()">🌗 Tema</button>
+      <button class="btn" onclick="exportSVG()">📥 Export SVG</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <div class="canvas-container" id="canvas">
+      <svg id="diagram-svg" viewBox="0 0 1200 680">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b" />
+          </marker>
+          <marker id="arrow-accent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8" />
+          </marker>
+        </defs>
+
+        <g id="viewport">
+          <!-- VIEW 1: ARCHITECTURE & WORKFLOW -->
+          <g id="view-arch">
+            <!-- Tier Containers -->
+            <rect x="30" y="40" width="210" height="580" rx="12" fill="none" stroke="#334155" stroke-dasharray="5 5" />
+            <text x="45" y="68" fill="#3b82f6" font-size="11" font-weight="700">TIER 1: CLIENT &amp; MAIN SYSTEM</text>
+
+            <rect x="270" y="40" width="200" height="580" rx="12" fill="none" stroke="#334155" stroke-dasharray="5 5" />
+            <text x="285" y="68" fill="#f59e0b" font-size="11" font-weight="700">TIER 2: API GATEWAY (:8001)</text>
+
+            <rect x="500" y="40" width="420" height="580" rx="12" fill="none" stroke="#334155" stroke-dasharray="5 5" />
+            <text x="515" y="68" fill="#8b5cf6" font-size="11" font-weight="700">TIER 3: AI VERIFICATION PIPELINE (SINGLETON)</text>
+
+            <rect x="950" y="40" width="220" height="580" rx="12" fill="none" stroke="#334155" stroke-dasharray="5 5" />
+            <text x="965" y="68" fill="#10b981" font-size="11" font-weight="700">TIER 4: STORAGE &amp; ADMIN</text>
+
+            <!-- Edges -->
+            <path class="edge" d="M 135 190 L 135 270" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 135 190 L 135 270" />
+            <text class="edge-label" x="145" y="235">Selfie JPG</text>
+
+            <path class="edge" d="M 220 315 L 290 315" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 220 315 L 290 315" />
+            <text class="edge-label" x="225" y="303">Webhook Trigger</text>
+
+            <path class="edge" d="M 450 315 L 520 155" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 450 315 L 520 155" />
+
+            <path class="edge" d="M 690 155 L 735 155" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 690 155 L 735 155" />
+
+            <path class="edge" d="M 605 195 L 605 275" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 605 195 L 605 275" />
+            <text class="edge-label" x="615" y="240">Crop +15%</text>
+
+            <path class="edge" d="M 605 355 L 605 430" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 605 355 L 605 430" />
+            <text class="edge-label" x="615" y="398">Aligned 160x160</text>
+
+            <path class="edge" d="M 690 470 L 735 470" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 690 470 L 735 470" />
+            <text class="edge-label" x="695" y="458">512-D</text>
+
+            <path class="edge" d="M 690 455 L 970 175" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 690 455 L 970 175" />
+            <text class="edge-label" x="835" y="275">Incremental Save</text>
+
+            <path class="edge" d="M 970 195 L 820 430" marker-end="url(#arrow)" />
+            <text class="edge-label" x="880" y="340">Histori Vektor</text>
+
+            <path class="edge" d="M 900 470 L 970 350" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 900 470 L 970 350" />
+
+            <path class="edge" d="M 900 155 L 970 325" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 900 155 L 970 325" />
+
+            <path class="edge" d="M 1060 500 L 1060 400" marker-end="url(#arrow)" />
+            <path class="edge-flow" d="M 1060 500 L 1060 400" />
+            <text class="edge-label" x="1070" y="455">Audit Query</text>
+
+            <!-- Nodes -->
+            <g class="node-group" onclick="selectNode('pegawai')">
+              <rect class="node-rect" x="50" y="110" width="170" height="80" stroke="#3b82f6" />
+              <text class="node-tag" x="65" y="132" fill="#3b82f6">USER APP</text>
+              <text class="node-title" x="65" y="152">Pegawai BPVP</text>
+              <text class="node-sub" x="65" y="170">Absen Selfie Live (JPG)</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('main_system')">
+              <rect class="node-rect" x="50" y="275" width="170" height="85" stroke="#3b82f6" />
+              <text class="node-tag" x="65" y="297" fill="#3b82f6">MAIN BACKEND</text>
+              <text class="node-title" x="65" y="317">Sistem Presensi</text>
+              <text class="node-sub" x="65" y="335">POST /trigger-verification</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('gateway')">
+              <rect class="node-rect" x="290" y="275" width="160" height="85" stroke="#f59e0b" />
+              <text class="node-tag" x="305" y="297" fill="#f59e0b">FASTAPI + SECURITY</text>
+              <text class="node-title" x="305" y="317">API Gateway</text>
+              <text class="node-sub" x="305" y="335">CORS &amp; X-API-Key</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('yolo')">
+              <rect class="node-rect" x="520" y="115" width="170" height="80" stroke="#8b5cf6" />
+              <text class="node-tag" x="535" y="137" fill="#8b5cf6">STEP 1 • DETECTOR</text>
+              <text class="node-title" x="535" y="157">YOLOv12n-face</text>
+              <text class="node-sub" x="535" y="175">1 Wajah + Margin 15%</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('spoof')">
+              <rect class="node-rect" x="735" y="115" width="165" height="80" stroke="#8b5cf6" />
+              <text class="node-tag" x="750" y="137" fill="#8b5cf6">STEP 2 • LIVENESS</text>
+              <text class="node-title" x="750" y="157">MiniFASNet</text>
+              <text class="node-sub" x="750" y="175">Anti-Spoof (Real/Fake)</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('aligner')">
+              <rect class="node-rect" x="520" y="275" width="170" height="80" stroke="#8b5cf6" />
+              <text class="node-tag" x="535" y="297" fill="#8b5cf6">STEP 3 • ALIGNER</text>
+              <text class="node-title" x="535" y="317">MediaPipe Mesh</text>
+              <text class="node-sub" x="535" y="335">Iris 468/473 Rotasi 0°</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('embedder')">
+              <rect class="node-rect" x="520" y="430" width="170" height="80" stroke="#8b5cf6" />
+              <text class="node-tag" x="535" y="452" fill="#8b5cf6">STEP 4 • EMBEDDER</text>
+              <text class="node-title" x="535" y="472">InceptionResnetV1</text>
+              <text class="node-sub" x="535" y="490">VGGFace2 512-D L2-Norm</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('comparator')">
+              <rect class="node-rect" x="735" y="430" width="165" height="80" stroke="#8b5cf6" />
+              <text class="node-tag" x="750" y="452" fill="#8b5cf6">STEP 5 • MATCHER</text>
+              <text class="node-title" x="750" y="472">1:1 Cosine Sim</text>
+              <text class="node-sub" x="750" y="490">Threshold 60% (0.60)</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('db_emb')">
+              <rect class="node-rect" x="970" y="115" width="180" height="80" stroke="#10b981" />
+              <text class="node-tag" x="985" y="137" fill="#10b981">POSTGRESQL TABLE</text>
+              <text class="node-title" x="985" y="157">face_embeddings</text>
+              <text class="node-sub" x="985" y="175">REAL[512] + det_conf</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('db_verif')">
+              <rect class="node-rect" x="970" y="310" width="180" height="85" stroke="#10b981" />
+              <text class="node-tag" x="985" y="332" fill="#10b981">POSTGRESQL TABLE</text>
+              <text class="node-title" x="985" y="352">attendance_verif...</text>
+              <text class="node-sub" x="985" y="370">Skor %, Spoof, Waktu (s)</text>
+            </g>
+
+            <g class="node-group" onclick="selectNode('admin')">
+              <rect class="node-rect" x="970" y="500" width="180" height="80" stroke="#ec4899" />
+              <text class="node-tag" x="985" y="522" fill="#ec4899">INTERNAL PORTAL</text>
+              <text class="node-title" x="985" y="542">Admin Panel BPVP</text>
+              <text class="node-sub" x="985" y="560">Tabel Audit &amp; Detail Foto</text>
+            </g>
+          </g>
+
+          <!-- VIEW 2: DATABASE ERD -->
+          <g id="view-erd" style="display: none;">
+            <text x="60" y="65" fill="#38bdf8" font-size="15" font-weight="700">ENTITY RELATIONSHIP DIAGRAM — DATABASE: face_detection_bpvp (PostgreSQL)</text>
+            <text x="60" y="88" fill="#94a3b8" font-size="12">Relasi logis 1:N melalui atribut user_id (diindeks pada kedua tabel untuk lookup cepat tanpa duplikasi det_confidence).</text>
+
+            <!-- Relationship Line -->
+            <path class="edge" d="M 480 220 C 580 220, 580 220, 680 220" stroke="#38bdf8" stroke-width="2.5" />
+            <path class="edge-flow" d="M 480 220 C 580 220, 580 220, 680 220" />
+            <rect x="520" y="195" width="125" height="24" rx="6" fill="#1e293b" stroke="#38bdf8" />
+            <text x="532" y="211" fill="#38bdf8" font-size="11" font-weight="700">user_id (1 : N)</text>
+
+            <!-- Table 1: face_embeddings -->
+            <g class="node-group" onclick="selectNode('db_emb')">
+              <rect class="node-rect" x="80" y="120" width="400" height="390" stroke="#10b981" />
+              <rect x="80" y="120" width="400" height="45" rx="10" fill="#10b981" />
+              <text x="100" y="148" fill="#0b0f19" font-size="14" font-weight="800">TABLE: face_embeddings</text>
+
+              <text x="100" y="195" fill="#f8fafc" font-size="12.5" font-weight="700">🔑 id</text>
+              <text x="270" y="195" fill="#94a3b8" font-size="12">BIGSERIAL PRIMARY KEY</text>
+
+              <text x="100" y="230" fill="#38bdf8" font-size="12.5" font-weight="700">🔎 user_id</text>
+              <text x="270" y="230" fill="#94a3b8" font-size="12">VARCHAR(100) NOT NULL [IDX]</text>
+
+              <text x="100" y="265" fill="#f8fafc" font-size="12.5" font-weight="700">📐 embedding</text>
+              <text x="270" y="265" fill="#94a3b8" font-size="12">REAL[512] NOT NULL (CHECK=512)</text>
+
+              <text x="100" y="300" fill="#f8fafc" font-size="12.5">🧠 model_name</text>
+              <text x="270" y="300" fill="#94a3b8" font-size="12">VARCHAR(50) DEFAULT 'vggface2'</text>
+
+              <text x="100" y="335" fill="#f8fafc" font-size="12.5">🔗 source_url</text>
+              <text x="270" y="335" fill="#94a3b8" font-size="12">TEXT (UNIQUE per user_id)</text>
+
+              <text x="100" y="370" fill="#f59e0b" font-size="12.5" font-weight="700">🎯 det_confidence</text>
+              <text x="270" y="370" fill="#94a3b8" font-size="12">REAL (Skor YOLO 0.0 - 1.0)</text>
+
+              <text x="100" y="405" fill="#f8fafc" font-size="12.5">📅 attendance_date</text>
+              <text x="270" y="405" fill="#94a3b8" font-size="12">TIMESTAMPTZ NOT NULL [IDX]</text>
+
+              <text x="100" y="440" fill="#f8fafc" font-size="12.5">✅ is_active</text>
+              <text x="270" y="440" fill="#94a3b8" font-size="12">BOOLEAN DEFAULT TRUE</text>
+
+              <text x="100" y="475" fill="#f8fafc" font-size="12.5">🕒 created_at</text>
+              <text x="270" y="475" fill="#94a3b8" font-size="12">TIMESTAMPTZ DEFAULT now()</text>
+            </g>
+
+            <!-- Table 2: attendance_verifications -->
+            <g class="node-group" onclick="selectNode('db_verif')">
+              <rect class="node-rect" x="680" y="120" width="440" height="450" stroke="#38bdf8" />
+              <rect x="680" y="120" width="440" height="45" rx="10" fill="#38bdf8" />
+              <text x="700" y="148" fill="#0b0f19" font-size="14" font-weight="800">TABLE: attendance_verifications</text>
+
+              <text x="700" y="195" fill="#f8fafc" font-size="12.5" font-weight="700">🔑 id</text>
+              <text x="895" y="195" fill="#94a3b8" font-size="12">BIGSERIAL PRIMARY KEY</text>
+
+              <text x="700" y="230" fill="#38bdf8" font-size="12.5" font-weight="700">🔎 user_id</text>
+              <text x="895" y="230" fill="#94a3b8" font-size="12">VARCHAR(100) NOT NULL [IDX]</text>
+
+              <text x="700" y="265" fill="#f8fafc" font-size="12.5">📅 attendance_date</text>
+              <text x="895" y="265" fill="#94a3b8" font-size="12">TIMESTAMPTZ NOT NULL [IDX]</text>
+
+              <text x="700" y="300" fill="#f8fafc" font-size="12.5">🖼️ photo_url</text>
+              <text x="895" y="300" fill="#94a3b8" font-size="12">TEXT (Foto Absen Hari Ini)</text>
+
+              <text x="700" y="335" fill="#f8fafc" font-size="12.5" font-weight="700">⚙️ process_status</text>
+              <text x="895" y="335" fill="#94a3b8" font-size="12">NO_DATASET | ON_PROCESS | DONE</text>
+
+              <text x="700" y="370" fill="#ec4899" font-size="12.5" font-weight="700">🛡️ is_spoof</text>
+              <text x="895" y="370" fill="#94a3b8" font-size="12">BOOLEAN (True = Layar/Kertas)</text>
+
+              <text x="700" y="405" fill="#10b981" font-size="12.5" font-weight="700">📊 similarity_percentage</text>
+              <text x="895" y="405" fill="#94a3b8" font-size="12">VARCHAR(10) (Contoh: '86.4%')</text>
+
+              <text x="700" y="440" fill="#f8fafc" font-size="12.5">🔢 similarity_score</text>
+              <text x="895" y="440" fill="#94a3b8" font-size="12">REAL (Skor Mentah: 0.8640)</text>
+
+              <text x="700" y="475" fill="#f59e0b" font-size="12.5" font-weight="700">🏷️ verification_status</text>
+              <text x="895" y="475" fill="#94a3b8" font-size="12">VERIFIED | NEEDS_REVIEW [IDX]</text>
+
+              <text x="700" y="510" fill="#f8fafc" font-size="12.5">⏱️ execution_time_seconds</text>
+              <text x="895" y="510" fill="#94a3b8" font-size="12">REAL (Durasi Mesin, detik)</text>
+
+              <text x="700" y="545" fill="#f8fafc" font-size="12.5">📝 notes</text>
+              <text x="895" y="545" fill="#94a3b8" font-size="12">TEXT (Log YOLO Conf &amp; Spoof)</text>
+            </g>
+          </g>
+        </g>
+      </svg>
+
+      <div class="legend">
+        <div class="legend-item"><span class="dot" style="background:#3b82f6"></span> Aplikasi Utama</div>
+        <div class="legend-item"><span class="dot" style="background:#f59e0b"></span> Gateway &amp; Auth</div>
+        <div class="legend-item"><span class="dot" style="background:#8b5cf6"></span> AI Pipeline</div>
+        <div class="legend-item"><span class="dot" style="background:#10b981"></span> PostgreSQL DB</div>
+        <div class="legend-item"><span class="dot" style="background:#ec4899"></span> Admin Audit</div>
+      </div>
+    </div>
+
+    <!-- Node Details Inspector -->
+    <aside class="inspector" id="inspector">
+      <h2 id="insp-title">Pilih Komponen Diagram</h2>
+      <div class="inspector-card">
+        <h3>Peran Teknis</h3>
+        <p id="insp-role">Klik salah satu blok komponen pada kanvas di samping untuk melihat spesifikasi teknis, file sumber, dan kontrak data.</p>
+      </div>
+      <div class="inspector-card">
+        <h3>Implementasi &amp; File Sumber</h3>
+        <p id="insp-file"><code>app/services/verifier.py</code></p>
+      </div>
+      <div class="inspector-card">
+        <h3>Detail Input / Output &amp; Catatan</h3>
+        <ul id="insp-details">
+          <li>Geser kanvas (drag) untuk navigasi dan gunakan scroll wheel untuk zoom.</li>
+          <li>Gunakan tombol tab di bagian atas untuk berpindah antara <b>Arsitektur AI</b> dan <b>Database ERD</b>.</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const NODE_DATA = {
+      pegawai: {
+        title: "Pegawai BPVP (Client App)",
+        role: "Mengambil foto selfie presensi secara live (hanya format JPG/JPEG) saat absen datang atau pulang.",
+        file: "app/services/downloader.py",
+        details: [
+          "Pegawai tidak berinteraksi langsung dengan microservice AI ini.",
+          "Validasi magic bytes memastikan hanya format JPEG murni (0xFF 0xD8 0xFF) yang diproses."
+        ]
+      },
+      main_system: {
+        title: "Sistem Presensi Utama BPVP",
+        role: "Menerima presensi pegawai lalu memicu verifikasi wajah secara asinkron di latar belakang.",
+        file: "app/routers/verification.py",
+        details: [
+          "Mengirimkan payload: user_id, photo_url, dan attendance_date.",
+          "Memanggil endpoint POST /trigger-verification."
+        ]
+      },
+      gateway: {
+        title: "FastAPI Gateway & Security (:8001)",
+        role: "Melindungi microservice dengan CORS Middleware dan autentikasi header X-API-Key.",
+        file: "app/main.py & app/security.py",
+        details: [
+          "Berjalan di port 8001 agar tidak bentrok dengan aplikasi utama (:8000).",
+          "Menolak request tanpa X-API-Key yang valid dengan HTTP 403 Forbidden."
+        ]
+      },
+      yolo: {
+        title: "Step 1: YOLOv12n-face Detector",
+        role: "Mendeteksi koordinat kotak wajah (bounding box) dan memotong wajah dengan tambahan margin 15%.",
+        file: "app/services/detector.py (models/yolov12n-face.pt)",
+        details: [
+          "Singleton model: dimuat sekali saat startup.",
+          "Menolak foto jika tidak ada wajah (0 wajah) atau lebih dari 1 wajah.",
+          "Menghasilkan det_confidence (0.0 - 1.0) yang disimpan ke face_embeddings."
+        ]
+      },
+      spoof: {
+        title: "Step 2: MiniFASNet Anti-Spoofing",
+        role: "Passive Liveness Detection untuk mendeteksi serangan foto dari layar monitor/HP (replay attack) atau kertas cetak.",
+        file: "app/services/anti_spoofing.py",
+        details: [
+          "Menggunakan library uniface (MiniFASNet).",
+          "Bersifat non-blocking: tidak menggagalkan proses absen, namun menandai is_spoof = True/False untuk audit Admin."
+        ]
+      },
+      aligner: {
+        title: "Step 3: MediaPipe Face Alignment",
+        role: "Mendeteksi titik pusat iris mata kiri (468) dan kanan (473), lalu memutar gambar agar mata sejajar 0° horizontal.",
+        file: "app/services/aligner.py",
+        details: [
+          "Menormalisasi kemiringan kepala sebelum ekstraksi fitur.",
+          "Output berupa citra wajah terpotong ukuran standar 160x160 piksel."
+        ]
+      },
+      embedder: {
+        title: "Step 4: InceptionResnetV1 (VGGFace2)",
+        role: "Mengekstrak karakteristik unik wajah menjadi vektor numerik 512 dimensi yang dinormalisasi L2.",
+        file: "app/services/embedder.py",
+        details: [
+          "Arsitektur FaceNet512 berbasis PyTorch (facenet-pytorch).",
+          "Setiap vektor memiliki panjang norma L2 = 1.0 sehingga siap dihitung dengan dot product / cosine similarity."
+        ]
+      },
+      comparator: {
+        title: "Step 5: 1:1 Cosine Similarity Comparator",
+        role: "Membandingkan vektor wajah hari ini dengan seluruh histori vektor milik user_id yang sama di database.",
+        file: "app/services/comparator.py",
+        details: [
+          "Mengambil skor kemiripan tertinggi terhadap histori referensi pegawai.",
+          "Jika user belum punya dataset -> status NO_DATASET.",
+          "Jika skor >= SIMILARITY_THRESHOLD (0.60) -> VERIFIED, jika di bawah -> NEEDS_REVIEW."
+        ]
+      },
+      db_emb: {
+        title: "Tabel: face_embeddings",
+        role: "Menyimpan dataset biometrik 512-D milik pegawai secara berkelanjutan (Incremental Learning).",
+        file: "schema.sql & app/db.py",
+        details: [
+          "Kolom utama: user_id, embedding (REAL[512]), det_confidence, source_url, attendance_date.",
+          "Memiliki constraint CHECK (array_length(embedding, 1) = 512).",
+          "Setiap foto presensi valid otomatis ditambahkan ke tabel ini untuk memperkaya referensi hari berikutnya."
+        ]
+      },
+      db_verif: {
+        title: "Tabel: attendance_verifications",
+        role: "Menyimpan log hasil audit verifikasi presensi harian untuk ditampilkan pada Admin Panel.",
+        file: "schema.sql & app/db.py",
+        details: [
+          "Kolom utama: user_id, attendance_date, process_status, is_spoof, similarity_percentage, verification_status, execution_time_seconds.",
+          "Tidak menduplikasi kolom det_confidence karena sudah tersimpan di face_embeddings."
+        ]
+      },
+      admin: {
+        title: "Admin Panel BPVP",
+        role: "Dashboard internal bagi auditor/HR untuk memantau potensi kecurangan absen (spoofing / wajah tidak cocok).",
+        file: "app/routers/verification.py",
+        details: [
+          "GET /admin/verifications: Menampilkan tabel rekap skor kemiripan, status spoof, dan waktu eksekusi mesin.",
+          "GET /admin/verifications/{user_id}/photos: Menampilkan modal Action Detail berisi galeri histori foto pegawai."
+        ]
+      }
+    };
+
+    function selectNode(key) {
+      const data = NODE_DATA[key];
+      if (!data) return;
+      document.getElementById('insp-title').textContent = data.title;
+      document.getElementById('insp-role').textContent = data.role;
+      document.getElementById('insp-file').innerHTML = `<code>${data.file}</code>`;
+      const ul = document.getElementById('insp-details');
+      ul.innerHTML = data.details.map(d => `<li>${d}</li>`).join('');
+    }
+
+    function switchView(view) {
+      document.getElementById('view-arch').style.display = view === 'arch' ? 'block' : 'none';
+      document.getElementById('view-erd').style.display = view === 'erd' ? 'block' : 'none';
+      document.getElementById('tab-arch').classList.toggle('active', view === 'arch');
+      document.getElementById('tab-erd').classList.toggle('active', view === 'erd');
+      resetZoom();
+    }
+
+    let flowPaused = false;
+    function toggleFlow() {
+      flowPaused = !flowPaused;
+      document.querySelectorAll('.edge-flow').forEach(el => el.classList.toggle('paused', flowPaused));
+      document.getElementById('btn-flow').textContent = flowPaused ? '▶️ Play Animasi' : '⚡ Pause Animasi';
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    }
+
+    // Pan & Zoom Logic
+    const svg = document.getElementById('diagram-svg');
+    const viewport = document.getElementById('viewport');
+    let scale = 1, panX = 0, panY = 0, isDragging = false, startX = 0, startY = 0;
+
+    function updateTransform() {
+      viewport.setAttribute('transform', `translate(${panX}, ${panY}) scale(${scale})`);
+    }
+
+    function resetZoom() {
+      scale = 1; panX = 0; panY = 0;
+      updateTransform();
+    }
+
+    const canvas = document.getElementById('canvas');
+    canvas.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      startX = e.clientX - panX;
+      startY = e.clientY - panY;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      panX = e.clientX - startX;
+      panY = e.clientY - startY;
+      updateTransform();
+    });
+    window.addEventListener('mouseup', () => { isDragging = false; });
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.08 : 0.92;
+      scale = Math.min(2.5, Math.max(0.5, scale * factor));
+      updateTransform();
+    }, { passive: false });
+
+    function exportSVG() {
+      const serializer = new XMLSerializer();
+      const source = serializer.serializeToString(svg);
+      const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'face-verif-service-bpvp-architecture.svg';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>

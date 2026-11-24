@@ -17,24 +17,41 @@ from pathlib import Path
 from typing import Tuple
 
 import cv2
-import mediapipe as mp
 import numpy as np
 
-# ── Singleton MediaPipe Face Mesh ─────────────────────────────────────────────
+# ── Import MediaPipe Face Mesh dengan Fallback Kompatibilitas ──────────────────
 _face_mesh = None
+_mediapipe_failed = False
 
 
 def _get_face_mesh():
-    global _face_mesh
-    if _face_mesh is None:
-        mp_face_mesh = mp.solutions.face_mesh
-        # refine_landmarks=True mengaktifkan landmark iris mata (indeks 468 & 473)
-        _face_mesh = mp_face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-        )
+    global _face_mesh, _mediapipe_failed
+    if _face_mesh is None and not _mediapipe_failed:
+        try:
+            # Cara 1: Import langsung dari mediapipe.solutions.face_mesh
+            import mediapipe.solutions.face_mesh as mp_face_mesh
+            _face_mesh = mp_face_mesh.FaceMesh(
+                static_image_mode=True,
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.5,
+            )
+        except Exception:
+            try:
+                # Cara 2: Import dari mediapipe.python.solutions
+                from mediapipe.python.solutions import face_mesh as mp_face_mesh
+                _face_mesh = mp_face_mesh.FaceMesh(
+                    static_image_mode=True,
+                    max_num_faces=1,
+                    refine_landmarks=True,
+                    min_detection_confidence=0.5,
+                )
+            except Exception as e:
+                # Fallback: jika modul solutions mediapipe tidak ditemukan,
+                # jangan gagalkan proses, aktifkan mode resize langsung
+                _mediapipe_failed = True
+                _face_mesh = None
+
     return _face_mesh
 
 
@@ -88,7 +105,12 @@ def align_face(
     # MediaPipe membutuhkan format RGB
     rgb_img = cv2.cvtColor(face_crop_bgr, cv2.COLOR_BGR2RGB)
     mesh = _get_face_mesh()
-    results = mesh.process(rgb_img)
+    results = None
+    if mesh is not None:
+        try:
+            results = mesh.process(rgb_img)
+        except Exception:
+            results = None
 
     left_eye_pt = None
     right_eye_pt = None
@@ -96,7 +118,7 @@ def align_face(
     is_aligned = False
     aligned_img = None
 
-    if results.multi_face_landmarks:
+    if results and results.multi_face_landmarks:
         landmarks = results.multi_face_landmarks[0].landmark
 
         # Indeks 468 (iris kiri) dan 473 (iris kanan) dari refine_landmarks

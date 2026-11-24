@@ -1,95 +1,192 @@
-# Face Verification Service — BPVP (Internal Admin Service)
+# Face Verification Service — BPVP
 
-Microservice verifikasi presensi wajah dan liveness detection untuk sistem internal kantor BPVP.
-Layanan ini berjalan di latar belakang (*background service*) untuk kebutuhan audit dan panel kontrol Admin kantor.
+Microservice independen untuk **verifikasi biometrik wajah (1:1)** dan **passive liveness detection (anti-spoofing)** pada sistem presensi internal BPVP. Berjalan secara asinkron di latar belakang (*background audit service*) untuk menyuplai data analitik ke **Admin Panel** tanpa membebani aplikasi utama.
 
-## Alur Kerja Sistem (11 Poin Sesuai Arahan Mentor)
-1. **User Absen Normal**: Pegawai melakukan absensi di aplikasi seperti biasa tanpa mengetahui atau menjalankan service ini.
-2. **Trigger Otomatis**: Sistem utama memicu microservice ini saat ada foto presensi baru diunggah.
-3. **Pengecekan Dataset Awal**:
-   - Jika pegawai baru dan belum memiliki riwayat foto sebelumnya $\rightarrow$ status **`NO_DATASET`**, foto pertama otomatis disimpan sebagai dataset acuan awal.
-   - Jika sudah ada riwayat foto sebelumnya $\rightarrow$ status **`ON_PROCESS`** menuju verifikasi.
-4. **Anti-Spoofing (MiniFASNet)**: Mendeteksi apakah foto diambil dari layar monitor/HP atau kertas cetak (*print/replay attack*). Hasilnya berupa `is_spoof: True/False` sebagai pertimbangan internal admin (tidak menggagalkan proses).
-5. **Pipeline Verifikasi Wajah**:
-   - Deteksi wajah menggunakan **YOLOv12n-face** + Bounding Box Crop (margin 15%).
-   - Face Alignment menggunakan **MediaPipe Face Mesh** (rotasi sudut mata horizontal sejajar 0°).
-   - Ekstraksi vektor embedding 512 dimensi menggunakan **InceptionResnetV1 (VGGFace2)**.
-   - Komparasi 1:1 Cosine Similarity dengan foto-foto sebelumnya milik user untuk menghitung persentase kemiripan (misal `86.4%`).
-6. **Waktu Eksekusi Mesin**: Menghitung durasi pemrosesan pada server (dalam detik/milidetik).
-7. **Penyimpanan Berkelanjutan (*Incremental Learning*)**: Foto yang berhasil diverifikasi otomatis diekstrak dan disimpan ke database untuk memperkaya dataset biometrik pegawai di masa mendatang.
-8. **Siklus Status Terstruktur**: `NO_DATASET`, `ON_PROCESS`, dan `DONE`.
-9. **Integrasi Admin Panel**:
-   - Endpoint rekap tabel pegawai (tanggal absen, skor kemiripan %, status spoof, durasi mesin).
-   - Endpoint Action Detail untuk menampilkan riwayat seluruh foto pegawai bersangkutan berdasarkan tanggal upload.
+> 💡 **Interactive Architecture Workbench:** Buka visualisasi interaktif lengkap (Pan/Zoom, Node Inspector, Animasi Alur, & ERD) di [`docs/architecture.html`](docs/architecture.html).
 
 ---
 
-## Struktur Database (`schema.sql`)
-- **`face_embeddings`**: Menyimpan dataset biometrik vektor 512-D, tanggal upload (`attendance_date`), dan status keaktifan.
-- **`attendance_verifications`**: Menyimpan riwayat audit presensi untuk tabel Admin Panel (`user_id`, `attendance_date`, `is_spoof`, `similarity_percentage`, `verification_status`, `execution_time_seconds`).
+## 1. Arsitektur Microservice
+
+Service ini dirancang terpisah (*decoupled*) dari aplikasi presensi utama agar pemrosesan komputasi AI (PyTorch, YOLO, MediaPipe) hemat RAM/CPU dan mudah diskalakan.
+
+```mermaid
+flowchart LR
+    subgraph Client["1. Aplikasi Utama BPVP"]
+        A["Pegawai Absen\n(Selfie Live JPG)"] --> B["Main Backend"]
+    end
+
+    subgraph Security["2. Gateway & Auth"]
+        C["FastAPI (:8001)\nCORS + X-API-Key"]
+    end
+
+    subgraph Pipeline["3. AI Verification Pipeline (Singleton Models)"]
+        D["YOLOv12n-face\nDeteksi & Crop (+15% margin)"]
+        E["MiniFASNet\nPassive Anti-Spoofing"]
+        F["MediaPipe Mesh\nEye Alignment (0° Horizontal)"]
+        G["InceptionResnetV1\nVGGFace2 512-D + L2 Norm"]
+        H["Cosine Comparator\n1:1 Matching vs Threshold"]
+    end
+
+    subgraph Storage["4. PostgreSQL (face_detection_bpvp)"]
+        I[("face_embeddings\n(512-D REAL[])")]
+        J[("attendance_verifications\n(Audit Log)")]
+    end
+
+    subgraph Admin["5. Admin Panel"]
+        K["Dashboard Audit\n& Riwayat Foto"]
+    end
+
+    B -- "POST /trigger-verification" --> C
+    C --> D
+    D --> E & F
+    F --> G
+    G -- "Simpan Vektor Baru\n(Incremental Learning)" --> I
+    I -- "Ambil Referensi User" --> H
+    G --> H
+    E & H -- "Rekap Skor, Spoof & Durasi" --> J
+    K -- "GET /admin/verifications" --> C
+    C -. "Query Rekap & Detail Foto" .-> J & I
+```
+
+### Keunggulan Desain (*Key Insights*)
+- **Singleton Model Loading**: Seluruh bobot model AI dimuat satu kali ke memori saat startup, menjaga latensi verifikasi tetap rendah (~0.2–0.6 detik/foto).
+- **Passive Auditing (Non-Blocking)**: Deteksi *spoofing* (layar HP/monitor atau kertas cetak) tidak memblokir absensi pegawai di lapangan, melainkan memberi penanda (`is_spoof: true`) agar Admin dapat melakukan audit secara objektif.
+- **Incremental Learning**: Setiap foto presensi yang valid otomatis diekstrak menjadi embedding baru di database, sehingga akurasi pengenalan wajah pegawai semakin adaptif terhadap perubahan penampilan seiring waktu.
 
 ---
 
-## Daftar Endpoint API
+## 2. Alur Verifikasi Presensi
 
-Semua endpoint dilindungi oleh header:
+Siklus pemrosesan dari saat pegawai mengunggah foto presensi hingga tampil di dashboard Admin:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor P as Pegawai
+    participant M as Sistem Utama
+    participant F as Face Verif Service
+    participant DB as PostgreSQL
+    actor A as Admin BPVP
+
+    P->>M: Submit absen + foto selfie live
+    M->>F: POST /trigger-verification (user_id, photo_url, date)
+    activate F
+    F->>F: Download JPG & Validasi Byte
+    F->>F: 1. YOLOv12n-face (Deteksi 1 Wajah & Crop 15%)
+    F->>F: 2. MiniFASNet (Cek Liveness: REAL / SPOOF)
+    F->>F: 3. MediaPipe (Rotasi Mata 0° & Resize 160x160)
+    F->>F: 4. VGGFace2 (Ekstrak Vektor 512-D L2-Normalized)
+    F->>DB: Cek histori embedding milik user_id
+    alt Pegawai Baru (Belum Ada Dataset)
+        F->>DB: Simpan vektor perdana ke face_embeddings
+        F->>DB: Catat status = NO_DATASET (0.0%)
+    else Sudah Ada Dataset Referensi
+        F->>F: Hitung 1:1 Cosine Similarity (Vektor Baru vs Histori)
+        F->>DB: Simpan vektor baru ke face_embeddings (Incremental)
+        F->>DB: Catat status = DONE (VERIFIED / NEEDS_REVIEW)
+    end
+    F-->>M: 200 OK (similarity_percentage, is_spoof, execution_time)
+    deactivate F
+    A->>F: GET /admin/verifications & /photos
+    F-->>A: Tampilkan tabel audit & modal riwayat foto pegawai
 ```
-X-API-Key: <nilai API_KEY di .env>
+
+### Siklus Status Verifikasi
+| Status Proses (`process_status`) | Status Hasil (`verification_status`) | Arti & Kondisi |
+| :--- | :--- | :--- |
+| `NO_DATASET` | `NO_DATASET` | Pegawai baru pertama kali absen; foto langsung dijadikan referensi awal. |
+| `DONE` | `VERIFIED` | Kemiripan wajah $\ge$ threshold (`0.60` / `60%`). |
+| `DONE` | `NEEDS_REVIEW` | Kemiripan wajah $<$ threshold atau memerlukan tinjauan manual Admin. |
+| `FAILED` | `FAILED` | Foto rusak, tidak ditemukan wajah, atau terdeteksi lebih dari satu wajah. |
+
+---
+
+## 3. Skema Database & ERD
+
+Menggunakan **PostgreSQL** (`face_detection_bpvp`). Vektor disimpan sebagai tipe native `REAL[512]` (siap dimigrasikan ke `pgvector` di masa depan), sedangkan kalkulasi *cosine similarity* dieksekusi di memori menggunakan NumPy.
+
+```mermaid
+erDiagram
+    FACE_EMBEDDINGS {
+        bigserial id PK
+        varchar(100) user_id "Index: ID/NIP Pegawai"
+        real[512] embedding "Vektor Wajah 512-D (L2-Norm)"
+        varchar(50) model_name "Default: vggface2"
+        text source_url "URL/Path Foto Sumber"
+        real det_confidence "Skor Deteksi YOLO (0.0-1.0)"
+        timestamptz attendance_date "Waktu Upload Foto"
+        boolean is_active "Status Aktif Dataset"
+        timestamptz created_at
+    }
+
+    ATTENDANCE_VERIFICATIONS {
+        bigserial id PK
+        varchar(100) user_id "Index: ID/NIP Pegawai"
+        timestamptz attendance_date "Waktu Presensi"
+        text photo_url "URL Foto Presensi"
+        varchar(20) process_status "NO_DATASET | ON_PROCESS | DONE | FAILED"
+        boolean is_spoof "True jika indikasi layar/kertas"
+        varchar(10) similarity_percentage "Format UI: 86.4%"
+        real similarity_score "Skor Mentah: 0.8640"
+        varchar(30) verification_status "VERIFIED | NEEDS_REVIEW | NO_DATASET"
+        real execution_time_seconds "Durasi Proses Mesin (detik)"
+        text notes "Ringkasan YOLO Conf & Spoof Label"
+        timestamptz created_at
+    }
+
+    FACE_EMBEDDINGS ||--o{ ATTENDANCE_VERIFICATIONS : "user_id (1:N Logical Relation)"
 ```
 
-| Method | Endpoint | Deskripsi |
-|---|---|---|
-| `POST` | `/trigger-verification` | Trigger otomatis dari sistem utama saat ada upload absen baru (`user_id`, `photo_url`, `attendance_date`) |
-| `POST` | `/verify` | Verifikasi presensi upload foto langsung (file JPG/JPEG) |
-| `POST` | `/verify/base64` | Verifikasi presensi via JSON string Base64 |
-| `GET` | `/admin/verifications` | Menampilkan tabel rekap absensi untuk dashboard Admin Panel |
-| `GET` | `/admin/verifications/{user_id}/photos` | Tombol 'Action Detail' menampilkan seluruh foto pegawai berdasarkan tanggal upload |
-| `POST` | `/face-datasets` | Pendaftaran batch dataset wajah pegawai dari URL |
-| `GET` | `/health` | Pemeriksaan kesehatan layanan server |
+> **Catatan Desain Database:** Atribut `det_confidence` hanya disimpan di `face_embeddings` (dan diringkas pada kolom `notes` di tabel audit) untuk menghindari duplikasi kolom antar-tabel.
 
-## Struktur
-```
-face-verif-service/
-  app/
-    __init__.py
-    config.py       # konfigurasi dari .env
-    db.py           # operasi database (psycopg 3)
-    main.py         # FastAPI, CORS, health check
-    security.py     # API key dependency
-    services/       # pipeline AI (detector, aligner, embedder, dsb.)
-    routers/        # endpoint FastAPI per fitur
-  schema.sql        # DDL tabel face_embeddings
-  test_db.py        # tes koneksi database
-  requirements.txt
-  .env              # TIDAK di-commit (ada di .gitignore)
-```
+---
 
-## Menjalankan
-```bash
-# 1. Buat dan aktifkan venv
-python -m venv venv
-.\venv\Scripts\activate   # Windows
+## 4. Spesifikasi Endpoint API
 
-# 2. Install dependensi
+Seluruh endpoint (kecuali `/health`) wajib menyertakan header autentikasi:
+`X-API-Key: <API_KEY>`
+
+| Method | Endpoint | Fungsi Utama |
+| :--- | :--- | :--- |
+| `POST` | `/trigger-verification` | **Webhook Utama**: Menerima `user_id`, `photo_url`, `attendance_date` dari sistem presensi. |
+| `POST` | `/verify` | Uji verifikasi langsung menggunakan unggahan file `multipart/form-data` (JPG/JPEG). |
+| `POST` | `/verify/base64` | Verifikasi langsung menggunakan payload JSON string Base64. |
+| `POST` | `/face-datasets` | Pendaftaran (*enrollment*) kumpulan foto referensi awal pegawai via daftar URL. |
+| `GET` | `/admin/verifications` | Mengambil daftar hasil audit presensi untuk tabel utama di Admin Panel. |
+| `GET` | `/admin/verifications/{user_id}/photos` | **Action Detail**: Mengambil seluruh riwayat foto pegawai berdasarkan tanggal upload. |
+| `GET` | `/health` | Cek status hidup server (*healthcheck* publik). |
+
+---
+
+## 5. Struktur Proyek & Instalasi Cepat
+
+* `app/`
+  * `main.py` — Entry point FastAPI, konfigurasi CORS, & registrasi router
+  * `config.py` — Konfigurasi environment (`.env`), dimensi model, & threshold
+  * `db.py` — Koneksi PostgreSQL (`psycopg3`) & query repositori
+  * `security.py` — Validasi keamanan header `X-API-Key`
+  * `routers/` — Endpoint `enrollment.py` & `verification.py`
+  * `services/` — Pipeline AI (`detector.py`, `anti_spoofing.py`, `aligner.py`, `embedder.py`, `comparator.py`, `verifier.py`, `downloader.py`)
+* `models/` — Bobot model lokal `yolov12n-face.pt` (diabaikan oleh Git)
+* `datasets/` — Folder uji lokal `reference/` & `live_test/` (diproteksi penuh oleh `.gitignore`)
+* `docs/architecture.html` — Visualisasi arsitektur interaktif mandiri (*Archify*)
+* `schema.sql` — DDL inisialisasi tabel & hak akses PostgreSQL
+
+### Menjalankan Layanan (Python 3.11)
+
+```powershell
+# 1. Buat & aktifkan virtual environment Python 3.11
+py -3.11 -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# 2. Pasang dependensi & siapkan konfigurasi
 pip install -r requirements.txt
+copy .env.example .env
 
-# 3. Salin .env dan isi nilainya
-copy .env.example .env    # lalu edit API_KEY dan DATABASE_URL
-
-# 4. Jalankan server
+# 3. Jalankan database schema di PostgreSQL (DBeaver / psql), lalu nyalakan server
 uvicorn app.main:app --reload --port 8001
 ```
 
-Server berjalan di **http://localhost:8001**
-Swagger docs: **http://localhost:8001/docs**
-
-## Autentikasi
-Setiap request (kecuali `/health`) harus menyertakan header:
-```
-X-API-Key: <nilai API_KEY di .env>
-```
-
-## Database
-PostgreSQL lokal via Laragon. Jalankan `schema.sql` sekali untuk membuat tabel.
-Tanpa pgvector untuk sementara — embedding disimpan sebagai `REAL[]`,
-pencocokan cosine similarity dihitung di Python (NumPy).
+- **Base URL**: `http://localhost:8001`
+- **Swagger UI**: `http://localhost:8001/docs`

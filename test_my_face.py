@@ -10,11 +10,13 @@ Jalankan:
 """
 
 from pathlib import Path
+import time
 import cv2
 import numpy as np
 
 from app.config import SIMILARITY_THRESHOLD, MODEL_NAME
 from app.services.detector import detect_and_crop, FaceDetectionError
+from app.services.anti_spoofing import check_anti_spoof
 from app.services.aligner import align_face
 from app.services.embedder import extract_embedding
 from app.services.comparator import verify_face
@@ -22,7 +24,7 @@ from app.db import (
     save_embedding,
     get_embeddings,
     delete_user_embeddings,
-    save_verification_log,
+    save_attendance_record,
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -33,11 +35,11 @@ REF_DIR.mkdir(parents=True, exist_ok=True)
 LIVE_DIR.mkdir(parents=True, exist_ok=True)
 
 USER_ID = "PEGAWAI-001"  # ID simulasi untuk pengujian lokal
-SUPPORTED = {".jpg", ".jpeg"}
+SUPPORTED = {".jpg", ".jpeg", ".png", ".webp"}
 
-print("=" * 75)
-print("   SIMULASI VERIFIKASI PRESENSI WAJAH BPVP (PENGUJIAN LOKAL)")
-print("=" * 75)
+print("=" * 85)
+print("   SIMULASI VERIFIKASI PRESENSI WAJAH BPVP (PENGUJIAN LOKAL WAJAH PRIBADI)")
+print("=" * 85)
 print(f"Model Pengenal : {MODEL_NAME} (InceptionResnetV1 - 512 Dimensi)")
 print(f"Threshold .env : {SIMILARITY_THRESHOLD:.0%} ({SIMILARITY_THRESHOLD})")
 print(f"User ID Uji    : {USER_ID}\n")
@@ -97,8 +99,8 @@ if not live_images:
     raise SystemExit(1)
 
 print(f"--- [LANGKAH 2] Memverifikasi Foto Presensi dari: {LIVE_DIR.name}/ ---")
-print(f"{'No':<3} {'Foto Selfie Live':<25} {'Kemiripan':<12} {'Status':<16} {'Keterangan'}")
-print("-" * 75)
+print(f"{'No':<3} {'Foto Selfie Live':<25} {'Kemiripan':<11} {'Spoof?':<8} {'Status':<15} {'Waktu (s)':<11} {'Keterangan'}")
+print("-" * 105)
 
 # Ambil data embedding referensi dari database PostgreSQL
 db_embeddings = get_embeddings(USER_ID)
@@ -107,33 +109,47 @@ if db_embeddings.size == 0:
     raise SystemExit(1)
 
 for idx, path in enumerate(live_images, 1):
+    start_time = time.perf_counter()
     img = cv2.imread(str(path))
     if img is None:
         print(f"{idx:<3} {path.name:<25} {'GAGAL BACA':<12}")
         continue
 
     try:
-        # Pipeline Live: Deteksi -> Alignment -> Embedding
+        # Pipeline Live:
+        # 1. Deteksi Wajah
         det = detect_and_crop(img, margin=0.15)
+        # 2. Anti-Spoofing (Liveness Check)
+        spoof = check_anti_spoof(img, det.bbox_original)
+        # 3. Alignment Wajah
         aln = align_face(det.face_crop, target_size=(160, 160))
+        # 4. Ekstraksi Embedding
         live_emb = extract_embedding(aln.aligned_face)
 
-        # Bandingkan dengan referensi di database (1:1 Cosine Similarity)
+        # 5. Bandingkan dengan referensi di database (1:1 Cosine Similarity)
         verif = verify_face(live_emb, db_embeddings, threshold=SIMILARITY_THRESHOLD)
 
-        # Simpan jejak riwayat verifikasi ke database audit log
+        exec_time = round(time.perf_counter() - start_time, 4)
+
+        # 6. Simpan jejak riwayat verifikasi ke database
         try:
-            save_verification_log(
+            save_attendance_record(
                 user_id=USER_ID,
+                verification_status=verif.status,
+                process_status="DONE",
+                photo_url=f"local://live_test/{path.name}",
+                is_spoof=spoof.is_spoof,
+                similarity_percentage=verif.similarity_percentage,
                 similarity_score=verif.similarity_score,
-                status=verif.status,
-                is_match=verif.is_match,
-                live_embedding=live_emb,
+                execution_time_seconds=exec_time,
+                notes=f"YOLO: {det.confidence:.1%}, Spoof: {spoof.label}",
             )
         except Exception:
             pass
 
         sim_str = verif.similarity_percentage
+        spoof_str = f"SPOOF({spoof.confidence:.0%})" if spoof.is_spoof else f"REAL({spoof.confidence:.0%})"
+
         if verif.is_match:
             status_text = "✓ VERIFIED"
             ket = f"Lolos presensi (>= {SIMILARITY_THRESHOLD:.0%})"
@@ -141,12 +157,12 @@ for idx, path in enumerate(live_images, 1):
             status_text = "✗ NEEDS_REVIEW"
             ket = f"Di bawah {SIMILARITY_THRESHOLD:.0%}, butuh konfirmasi admin"
 
-        print(f"{idx:<3} {path.name:<25} {sim_str:<12} {status_text:<16} {ket}")
+        print(f"{idx:<3} {path.name:<25} {sim_str:<11} {spoof_str:<8} {status_text:<15} {exec_time:<11.4f} {ket}")
 
     except FaceDetectionError as e:
-        print(f"{idx:<3} {path.name:<25} {'-':<12} {'DITOLAK':<16} Deteksi: {e}")
+        print(f"{idx:<3} {path.name:<25} {'-':<11} {'-':<8} {'DITOLAK':<15} {'-':<11} Deteksi: {e}")
     except Exception as e:
-        print(f"{idx:<3} {path.name:<25} {'-':<12} {'ERROR':<16} {e}")
+        print(f"{idx:<3} {path.name:<25} {'-':<11} {'-':<8} {'ERROR':<15} {'-':<11} {e}")
 
-print("=" * 75)
-print("Simulasi selesai. Riwayat verifikasi tercatat di database PostgreSQL.")
+print("=" * 105)
+print("Simulasi selesai. Riwayat verifikasi & jejak biometrik tercatat di database PostgreSQL.")

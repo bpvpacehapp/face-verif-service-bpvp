@@ -10,17 +10,20 @@ models/*.h5
 models/*.onnx
 models/*.pth
 
-# Dataset foto lokal — privasi aman, tidak di-commit
+# ── Dataset Foto Lokal & Privasi ─────────────────────────────
+# Semua file foto di folder datasets/ DIJAMIN TIDAK AKAN PERNAH ter-upload ke Git
 datasets/sample/*
 datasets/output/*
 datasets/reference/*
 datasets/live_test/*
+datasets/**/*.jpg
+datasets/**/*.jpeg
+datasets/**/*.png
+datasets/**/*.webp
+datasets/**/*.bmp
 
-# Kecualikan placeholder folder
-!datasets/sample/.gitkeep
-!datasets/output/.gitkeep
-!datasets/reference/.gitkeep
-!datasets/live_test/.gitkeep
+# Kecualikan hanya file penanda folder (.gitkeep)
+!datasets/**/.gitkeep
 !models/.gitkeep
 
 .DS_Store
